@@ -1298,10 +1298,16 @@ check_validity:
 #endif
     if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
         if ((slot != BOOT_PRIMARY_SLOT) || ARE_SLOTS_EQUIVALENT()) {
+// BluleapAI: Don't allow mcuboot erase anything in invalid firmware area
+#if !defined(MCUBOOT_DONOT_SCRAMBLE_INVALID_IMG)
             boot_scramble_slot(fap, slot);
             /* Image is invalid, erase it to prevent further unnecessary
              * attempts to validate and boot it.
              */
+#else
+            // Do not scramble invalid image
+            BOOT_LOG_WRN("Ignore scramble invalid image at the %s slot", (slot == BOOT_PRIMARY_SLOT) ? "primary" : "secondary");
+#endif
         }
 
 #if !defined(__BOOTSIM__)
@@ -3639,6 +3645,8 @@ boot_load_and_validate_images(struct boot_loader_state *state)
     int rc;
     fih_ret fih_rc;
 
+    BOOT_LOG_DBG("boot_load_and_validate_images");
+
     /* Go over all the images and try to load one */
     IMAGES_ITER(BOOT_CURR_IMG(state)) {
         /* All slots tried until a valid image found. Breaking from this loop
@@ -3716,6 +3724,35 @@ boot_load_and_validate_images(struct boot_loader_state *state)
             }
 
             /* Valid image loaded from a slot, go to next image. */
+#ifdef MCUBOOT_CUSTOM_CATEGORY_SLOT_PICKUP
+            bool slot0_is_ready = state->slot_usage[BOOT_CURR_IMG(state)].slot_available[0];
+            bool slot1_is_ready = state->slot_usage[BOOT_CURR_IMG(state)].slot_available[1];
+
+            BOOT_LOG_DBG("Slot0: %d, Slot1: %d, Pickup: %d", slot0_is_ready, slot1_is_ready, state->slot_usage[BOOT_CURR_IMG(state)].active_slot);
+            struct boot_swap_state primary_slot;
+            rc = boot_read_swap_state_by_id(FLASH_AREA_IMAGE_PRIMARY(0),
+                                            &primary_slot);
+            if(primary_slot.magic == BOOT_MAGIC_GOOD) {
+                if(primary_slot.image_ok != BOOT_FLAG_UNSET && slot1_is_ready == 1) {
+                    if(state->slot_usage[BOOT_CURR_IMG(state)].active_slot != 1) {
+                        BOOT_LOG_WRN("Forced mcuboot go_boot with slot 1 image");
+                        state->slot_usage[BOOT_CURR_IMG(state)].active_slot = 1;
+                    }
+                } else if(primary_slot.image_ok == BOOT_FLAG_UNSET && slot0_is_ready == 1) {
+                    if(state->slot_usage[BOOT_CURR_IMG(state)].active_slot != 0) {
+                        BOOT_LOG_WRN("Forced mcuboot go_boot with slot 0 image");
+                        state->slot_usage[BOOT_CURR_IMG(state)].active_slot = 0;
+                    }
+                } else {
+                    BOOT_LOG_ERR("Not found valid image");
+                }
+            } else {
+                // Do nothing if slot 0 trailer is not set magic number
+                BOOT_LOG_WRN("Slot 0 trailer magic number not set, assume it boot from slot 0!");
+                state->slot_usage[BOOT_CURR_IMG(state)].active_slot = 0;
+            }
+
+#endif
             break;
         }
     }

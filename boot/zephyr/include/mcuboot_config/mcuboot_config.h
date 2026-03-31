@@ -348,6 +348,24 @@
 #endif
 
 /*
+ * When enabled, MCUboot will NOT perform any scrambling or partial
+ * invalidation of an image. This is useful for the
+ * application requires the image to remain intact even if marked invalid.
+ */
+#ifdef CONFIG_MCUBOOT_STORAGE_DONOT_SCRAMBLE
+#define MCUBOOT_DONOT_SCRAMBLE_INVALID_IMG
+#endif
+
+/*
+ * When enabled, MCUboot selects the boot image based on the 'image_ok'
+ * flag in the slot 0 trailer. If the flag is not set, slot 0 is preferred
+ * for boot; otherwise, alternative slot selection logic may be applied.
+ */
+#ifdef CONFIG_MCUBOOT_CUSTOM_CATEGORY_SLOT_PICKUP
+#define MCUBOOT_CUSTOM_CATEGORY_SLOT_PICKUP
+#endif
+
+/*
  * Enabling this option uses newer flash map APIs. This saves RAM and
  * avoids deprecated API usage.
  *

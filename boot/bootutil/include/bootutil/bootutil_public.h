@@ -5,6 +5,7 @@
  * Copyright (c) 2016-2019 JUUL Labs
  * Copyright (c) 2019-2021 Arm Limited
  * Copyright (c) 2020-2021 Nordic Semiconductor ASA
+ * Copyright (c) 2025 Kimbal.io
  *
  * Original license:
  *
@@ -346,6 +347,48 @@ int boot_remove_image_from_sram(struct boot_loader_state *state);
 int boot_remove_image_from_flash(struct boot_loader_state *state,
                                  uint32_t slot);
 #endif
+
+/**
+ * @brief Write the image_ok flag in the MCUboot trailer.
+ *
+ * This function sets or clears the `image_ok` flag in the trailer area of
+ * the given flash region. The flag is used by MCUboot to determine whether
+ * the currently running image has been confirmed as valid.
+ *
+ * Typical usage:
+ * - After a successful test boot, set image_ok to confirm the image and
+ *   prevent rollback.
+ *
+ * @param fap   Pointer to the flash area representing the image slot
+ * @param value Flag value to write:
+ *              - BOOT_FLAG_SET (0x01): mark image as confirmed
+ *              - 0xFF (or unset): leave unconfirmed (may trigger revert)
+ *
+ * @return 0 on success, negative errno code on failure.
+ *
+ */
+int boot_write_image_ok_val(const struct flash_area *fap, uint8_t value);
+
+/**
+ * @brief Write MCUboot magic value to request an image upgrade.
+ *
+ * This function is a public wrapper around the internal `boot_write_magic`
+ * implementation. It writes the MCUboot magic pattern into the trailer of
+ * the specified flash area, marking the image as pending for upgrade.
+ *
+ * On next reboot, MCUboot will detect the magic value in the secondary slot
+ * and perform an image swap into the primary slot.
+ *
+ * @param fap Pointer to the flash area representing the image slot
+ *
+ * @return 0 on success, negative errno code on failure.
+ *
+ * @note Writing magic without setting other flags (e.g. image_ok) results
+ *       in a test upgrade. The new image must be confirmed at runtime or
+ *       MCUboot may revert to the previous image.
+ *
+ */
+int boot_write_image_magic(const struct flash_area *fap);
 
 #ifdef __cplusplus
 }
