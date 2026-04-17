@@ -5,6 +5,7 @@
  * Copyright (c) 2016-2019 JUUL Labs
  * Copyright (c) 2019-2023 Arm Limited
  * Copyright (c) 2020-2025 Nordic Semiconductor ASA
+ * Copyright (c) 2024-2026 Kimbal.io
  *
  * Original license:
  *
@@ -801,4 +802,37 @@ boot_image_load_header(const struct flash_area *fa_p,
     }
 
     return 0;
+}
+
+int
+boot_write_image_ok_val(const struct flash_area *fap, uint8_t value)
+{
+    int rc;
+
+    if (fap != NULL) {
+        const uint32_t off = boot_image_ok_off(fap);
+
+        BOOT_LOG_DBG("writing image_ok; fa_id=%d off=0x%lx (0x%lx)",
+                     flash_area_get_id(fap), (unsigned long)off,
+                     (unsigned long)(flash_area_get_off(fap) + off));
+        rc = boot_write_trailer_flag(fap, off, value);
+    } else {
+        rc = BOOT_EBADARGS;
+    }
+
+    return rc;
+}
+
+int
+boot_write_image_magic(const struct flash_area *fap)
+{
+    int rc;
+
+    if (fap != NULL) {
+        rc = boot_write_magic(fap);
+    } else {
+        rc = BOOT_EBADARGS;
+    }
+
+    return rc;
 }

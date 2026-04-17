@@ -348,6 +348,25 @@
 #endif
 
 /*
+ * When enabled, MCUboot will not scramble or partially erase
+ * an image. This is useful when the application requires the
+ * image to remain intact even if it is marked as invalid.
+ */
+#ifdef CONFIG_MCUBOOT_STORAGE_DISABLE_SCRAMBLE
+#define MCUBOOT_DISABLE_SCRAMBLE_FOR_INVALID_IMG
+#endif
+
+/*
+ * When enabled, MCUboot selects the boot image based on the
+ * 'image_ok' flag in the primary slot trailer. If the flag is
+ * set, the secondary slot is selected for boot. Otherwise, the
+ * primary slot is selected for boot.
+ */
+#ifdef CONFIG_MCUBOOT_BOOT_SLOT_BY_IMAGE_OK
+#define MCUBOOT_BOOT_SLOT_BY_IMAGE_OK
+#endif
+
+/*
  * Enabling this option uses newer flash map APIs. This saves RAM and
  * avoids deprecated API usage.
  *

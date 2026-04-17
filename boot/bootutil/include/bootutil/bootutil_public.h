@@ -5,6 +5,7 @@
  * Copyright (c) 2016-2019 JUUL Labs
  * Copyright (c) 2019-2021 Arm Limited
  * Copyright (c) 2020-2021 Nordic Semiconductor ASA
+ * Copyright (c) 2024-2026 Kimbal.io
  *
  * Original license:
  *
@@ -346,6 +347,38 @@ int boot_remove_image_from_sram(struct boot_loader_state *state);
 int boot_remove_image_from_flash(struct boot_loader_state *state,
                                  uint32_t slot);
 #endif
+
+/**
+ * @brief Write the image_ok flag value to the image trailer.
+ *
+ * Sets or clears the 'image_ok' flag in the trailer area of
+ * the given flash slot.
+ *
+ * @param[in] fap    Pointer to the flash area representing the image slot.
+ *                   Must not be NULL.
+ * @param[in] value  Flag value to write:
+ *                   - BOOT_FLAG_SET   (0x01)
+ *                   - BOOT_FLAG_UNSET (0xFF)
+ *
+ * @retval 0         Success.
+ * @retval <0        Negative errno code on failure.
+ */
+int boot_write_image_ok_val(const struct flash_area *fap, uint8_t value);
+
+/**
+ * @brief Write the MCUboot magic pattern to the image trailer.
+ *
+ * Public wrapper around the internal boot_write_magic() implementation.
+ * Writes the MCUboot magic pattern into the trailer of the specified
+ * flash area.
+ *
+ * @param[in] fap  Pointer to the flash area representing the image slot.
+ *                 Must not be NULL.
+ *
+ * @retval 0       Success.
+ * @retval <0      Negative errno code on failure.
+ */
+int boot_write_image_magic(const struct flash_area *fap);
 
 #ifdef __cplusplus
 }

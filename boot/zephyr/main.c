@@ -679,6 +679,15 @@ int main(void)
 
     ZEPHYR_BOOT_LOG_STOP();
 
+#if defined(CONFIG_BOOT_DELAY) && (CONFIG_BOOT_DELAY > 0)
+    /*
+     * Allow time for the logs to flush before jumping to the
+     * application, especially when using RTT logging.
+     */
+    k_msleep(CONFIG_BOOT_DELAY);
+    k_yield();
+#endif
+
     do_boot(&rsp);
 
     mcuboot_status_change(MCUBOOT_STATUS_BOOT_FAILED);

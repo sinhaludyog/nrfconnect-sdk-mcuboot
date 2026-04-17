@@ -310,7 +310,7 @@ close_all_flash_areas(struct boot_loader_state *state)
 }
 
 #if (BOOT_IMAGE_NUMBER > 1) || \
-    defined(MCUBOOT_DIRECT_XIP) || \
+    (defined(MCUBOOT_DIRECT_XIP) && !defined(MCUBOOT_BOOT_SLOT_BY_IMAGE_OK)) || \
     defined(MCUBOOT_RAM_LOAD) || \
     defined(MCUBOOT_DOWNGRADE_PREVENTION)
 /**
@@ -1298,10 +1298,16 @@ check_validity:
 #endif
     if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
         if ((slot != BOOT_PRIMARY_SLOT) || ARE_SLOTS_EQUIVALENT()) {
+#if !defined(MCUBOOT_DISABLE_SCRAMBLE_FOR_INVALID_IMG)
             boot_scramble_slot(fap, slot);
             /* Image is invalid, erase it to prevent further unnecessary
              * attempts to validate and boot it.
              */
+#else
+            BOOT_LOG_INF("boot_validate_slot: Image %d | %s slot invalid (scrambling disabled, leaving image untouched).",
+                         (int)BOOT_CURR_IMG(state),
+                         (slot == BOOT_PRIMARY_SLOT) ? "primary" : "secondary");
+#endif
         }
 
 #if !defined(__BOOTSIM__)
@@ -3378,6 +3384,7 @@ boot_get_slot_usage(struct boot_loader_state *state)
     return 0;
 }
 
+#ifndef MCUBOOT_BOOT_SLOT_BY_IMAGE_OK
 /**
  * Finds the slot containing the image with the highest version number for the
  * current image.
@@ -3414,6 +3421,7 @@ find_slot_with_highest_version(struct boot_loader_state *state)
 
     return candidate_slot;
 }
+#endif /* !MCUBOOT_BOOT_SLOT_BY_IMAGE_OK */
 
 #ifdef MCUBOOT_HAVE_LOGGING
 /**
@@ -3511,6 +3519,73 @@ boot_select_or_erase(struct boot_loader_state *state)
     return rc;
 }
 #endif /* MCUBOOT_DIRECT_XIP && MCUBOOT_DIRECT_XIP_REVERT */
+
+/**
+ * Selects the next candidate slot to attempt validation for the current image.
+ *
+ * When MCUBOOT_BOOT_SLOT_BY_IMAGE_OK is enabled, the selection is based on
+ * the image_ok flag in the primary slot trailer:
+ *   - image_ok set   -> secondary slot (FOTA update ready to run)
+ *   - image_ok unset -> primary slot (confirmed or initial image)
+ * The caller is responsible for running boot_validate_slot on the returned
+ * slot before committing it as active, so signature verification is always
+ * performed regardless of which slot is chosen.
+ *
+ * Falls back to the highest-version slot when the feature is disabled.
+ *
+ * @param  state   Boot loader status information.
+ *
+ * @return         Slot index to validate next, or NO_ACTIVE_SLOT if none.
+ */
+static uint32_t
+select_active_slot(struct boot_loader_state *state)
+{
+#ifdef MCUBOOT_BOOT_SLOT_BY_IMAGE_OK
+    struct boot_swap_state primary_state;
+    uint32_t img_idx = BOOT_CURR_IMG(state);
+    bool slot0_avail = state->slot_usage[img_idx].slot_available[BOOT_PRIMARY_SLOT];
+    bool slot1_avail = state->slot_usage[img_idx].slot_available[BOOT_SECONDARY_SLOT];
+    uint32_t selected = NO_ACTIVE_SLOT;
+    int rc;
+
+    BOOT_LOG_DBG("select_active_slot: Image %d | Primary available: %d, Secondary available: %d",
+                 (int)img_idx, (int)slot0_avail, (int)slot1_avail);
+
+    rc = boot_read_swap_state_by_id(FLASH_AREA_IMAGE_PRIMARY(img_idx), &primary_state);
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to read primary slot swap state");
+    } else if (primary_state.magic == BOOT_MAGIC_GOOD) {
+        if ((primary_state.image_ok != BOOT_FLAG_UNSET) && slot1_avail) {
+            selected = (uint32_t)BOOT_SECONDARY_SLOT;
+            BOOT_LOG_INF("select_active_slot: Selected image %d secondary slot",
+                         (int)img_idx);
+        } else if ((primary_state.image_ok == BOOT_FLAG_UNSET) && slot0_avail) {
+            selected = (uint32_t)BOOT_PRIMARY_SLOT;
+            BOOT_LOG_INF("select_active_slot: Selected image %d primary slot",
+                         (int)img_idx);
+        } else if (slot0_avail) {
+            /* image_ok is set but secondary slot is unavailable; fall back to primary. */
+            selected = (uint32_t)BOOT_PRIMARY_SLOT;
+            BOOT_LOG_WRN("select_active_slot: Image %d secondary slot requested but "
+                         "unavailable (possibly corrupted); falling back to primary slot",
+                         (int)img_idx);
+        } else {
+            BOOT_LOG_ERR("No valid image found");
+        }
+    } else {
+        BOOT_LOG_INF("select_active_slot: Image %d primary trailer magic not set, "
+                     "defaulting to primary",
+                     (int)img_idx);
+        if (slot0_avail) {
+            selected = (uint32_t)BOOT_PRIMARY_SLOT;
+        }
+    }
+
+    return selected;
+#else
+    return find_slot_with_highest_version(state);
+#endif /* MCUBOOT_BOOT_SLOT_BY_IMAGE_OK */
+}
 
 #ifdef MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER
 /**
@@ -3652,7 +3727,7 @@ boot_load_and_validate_images(struct boot_loader_state *state)
                 break;
             }
 
-            active_slot = find_slot_with_highest_version(state);
+            active_slot = select_active_slot(state);
             if (active_slot == NO_ACTIVE_SLOT) {
                 BOOT_LOG_INF("No slot to load for image %d",
                              BOOT_CURR_IMG(state));

@@ -1230,6 +1230,31 @@ config MCUBOOT_STORAGE_MINIMAL_SCRAMBLE
 	  Depending on type of device this may be done by erase of minimal
 	  number of pages or overwrite of part of image.
 
+config MCUBOOT_STORAGE_DISABLE_SCRAMBLE
+	bool "Preserve invalid images (no erase or scramble)"
+	depends on !MCUBOOT_STORAGE_MINIMAL_SCRAMBLE
+	help
+	  When enabled, MCUboot will not erase or partially overwrite
+	  (scramble) an image marked as invalid, and its flash contents
+	  will remain unchanged.
+
+	  This option is useful when image data must be preserved, for
+	  example when boot slots overlap. In such layouts, one slot may
+	  reside within an active slot region. Enabling this option
+	  prevents MCUboot from modifying the overlapping slot when it is
+	  detected as invalid.
+
+	  WARNING: Keeping invalid images intact may cause MCUboot to
+	  repeatedly detect and process the same invalid image on
+	  subsequent boots.
+
+config MCUBOOT_BOOT_SLOT_BY_IMAGE_OK
+    bool "Enable proprietary slot selection logic"
+    depends on MCUBOOT_STORAGE_DISABLE_SCRAMBLE
+    default n
+    help
+      Select boot slot based on the image_ok flag in the primary slot trailer.
+
 menu "Defaults"
 	# Items in this menu should not be manually set. These options are for modules/sysbuild to
 	# set as defaults to allow MCUboot's default configuration to be set, but still allow it
