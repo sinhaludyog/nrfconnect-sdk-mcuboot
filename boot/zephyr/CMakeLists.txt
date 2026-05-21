@@ -69,6 +69,10 @@ zephyr_library_sources(
   keys.c
   )
 
+if(CONFIG_FILE_SYSTEM_LITTLEFS AND NOT CONFIG_MULTITHREADING)
+  zephyr_library_sources(mcuboot_mutex_stub.c)
+endif()
+
 if(CONFIG_NCS_BM)
   zephyr_library_sources(io_bm.c)
 else()

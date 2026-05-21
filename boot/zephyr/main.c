@@ -28,6 +28,20 @@
 #include <soc.h>
 #include <zephyr/linker/linker-defs.h>
 
+#if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
+#include <zephyr/fs/fs.h>
+#include <zephyr/fs/littlefs.h>
+#include <zephyr/storage/flash_map.h>
+
+FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(lfs_cfg);
+static struct fs_mount_t lfs_mount_point = {
+    .type = FS_LITTLEFS,
+    .fs_data = &lfs_cfg,
+    .storage_dev = (void *)PM_LITTLEFS_STORAGE_ID,
+    .mnt_point = "/lfs",
+};
+#endif
+
 #if defined(CONFIG_BOOT_DISABLE_CACHES)
 #include <zephyr/cache.h>
 #endif
@@ -480,6 +494,20 @@ int main(void)
 {
     struct boot_rsp rsp;
     int rc;
+    __asm("NOP");
+#if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
+    rc = fs_mount(&lfs_mount_point);
+    if (rc < 0) {
+        BOOT_LOG_INF("Mount failed %d\n", rc);
+        while(1) {
+            __asm("NOP");
+        }
+    } else {
+        BOOT_LOG_INF("LittleFS mounted\n");
+    }
+    __asm("NOP");
+#endif
+
 #if defined(CONFIG_BOOT_USB_DFU_GPIO) || defined(CONFIG_BOOT_USB_DFU_WAIT)
     bool usb_dfu_requested = false;
 #endif
