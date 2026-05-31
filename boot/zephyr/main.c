@@ -27,6 +27,7 @@
 #include <zephyr/usb/usb_device.h>
 #include <soc.h>
 #include <zephyr/linker/linker-defs.h>
+#include <zephyr/drivers/hwinfo.h>
 
 #if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
 #include <zephyr/fs/littlefs.h>
@@ -709,8 +710,25 @@ int main(void)
 {
     struct boot_rsp rsp;
     int rc;
+    /*
+     * Get Reset reason
+     */    
+    uint32_t reset_reason = 0;
+    rc = hwinfo_get_reset_cause(&reset_reason);
+    hwinfo_clear_reset_cause();
+
+    if(reset_reason & RESET_WATCHDOG) {
+        /* MCU Reset reason by WDT */
+        boot_record_wdt_event();
+        // while(1) {
+        //     __asm("NOP");
+        // }
+    } else {
+        /* Normal boot found */
+    }
+    BOOT_LOG_INF("Starting bootloader from %x", reset_reason);
     __asm("NOP");
-    
+
 #if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
 #if(defined(CONFIG_FILE_SYSTEM) && CONFIG_FILE_SYSTEM == 1)
     rc = fs_mount(&lfs_mount_point);

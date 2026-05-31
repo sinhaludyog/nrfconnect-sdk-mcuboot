@@ -821,3 +821,56 @@ boot_write_image_magic(const struct flash_area *fap)
 {
     return boot_write_magic(fap);
 }
+
+
+int
+boot_record_wdt_event(void)
+{
+    #define WDT_MAGIC 0x25031991
+
+    struct wdt_event_record {
+        uint32_t magic;        /* validity check */
+        uint32_t counter;      /* number of WDT resets */
+    };
+
+    const struct flash_area *fa;
+    struct wdt_event_record rec;
+    off_t offset;
+    int ret;
+
+    ret = flash_area_open(FIXED_PARTITION_ID(slot0_partition), &fa);
+    if (ret) {
+        return ret;
+    }
+
+    // First 8 bytes of slot 0 trailer
+    offset = fa->fa_size - 96 - sizeof(struct wdt_event_record);
+
+    /* read existing record */
+    ret = flash_area_read(fa, offset, &rec, sizeof(rec));
+    if (ret) {
+        flash_area_close(fa);
+        return ret;
+    }
+
+    /* initialize if first time */
+    if (rec.magic != WDT_MAGIC) {
+        rec.magic = WDT_MAGIC;
+        rec.counter = 0;
+    }
+
+    rec.counter++;
+
+    /* erase + write trailer sector (simplified) */
+    ret = flash_area_erase(fa, offset, sizeof(rec));
+    if (ret) {
+        flash_area_close(fa);
+        return ret;
+    }
+
+    ret = flash_area_write(fa, offset, &rec, sizeof(rec));
+
+    flash_area_close(fa);
+    return ret;
+}
+

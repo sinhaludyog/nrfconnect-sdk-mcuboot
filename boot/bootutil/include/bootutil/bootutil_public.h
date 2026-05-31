@@ -390,6 +390,8 @@ int boot_write_image_ok_val(const struct flash_area *fap, uint8_t value);
  */
 int boot_write_image_magic(const struct flash_area *fap);
 
+int boot_record_wdt_event(void);
+
 #ifdef __cplusplus
 }
 #endif
