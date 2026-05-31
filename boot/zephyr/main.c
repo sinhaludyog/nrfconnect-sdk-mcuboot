@@ -29,17 +29,22 @@
 #include <zephyr/linker/linker-defs.h>
 
 #if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
-#include <zephyr/fs/fs.h>
 #include <zephyr/fs/littlefs.h>
 #include <zephyr/storage/flash_map.h>
 
+#if(defined(CONFIG_FILE_SYSTEM) && CONFIG_FILE_SYSTEM == 1)
+#include <zephyr/fs/fs.h>
+
 FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(lfs_cfg);
+
 static struct fs_mount_t lfs_mount_point = {
     .type = FS_LITTLEFS,
     .fs_data = &lfs_cfg,
     .storage_dev = (void *)PM_LITTLEFS_STORAGE_ID,
     .mnt_point = "/lfs",
 };
+#endif
+
 #endif
 
 #if defined(CONFIG_BOOT_DISABLE_CACHES)
@@ -490,12 +495,224 @@ static void boot_serial_enter()
 }
 #endif
 
+#if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
+#ifndef CONFIG_FILE_SYSTEM
+/* =========================================================
+ * LittleFS Context
+ * =========================================================
+ */
+
+static lfs_t g_lfs;
+static struct lfs_config g_lfs_cfg;
+
+/* cache + lookahead buffers must stay alive */
+static uint8_t g_read_buffer[16];
+static uint8_t g_prog_buffer[16];
+static uint32_t g_lookahead_buffer[16];
+
+/* =========================================================
+ * Flash Area
+ * =========================================================
+ */
+
+static const struct flash_area *g_fa;
+
+/* =========================================================
+ * LittleFS callbacks
+ * =========================================================
+ */
+
+static int lfs_flash_read(const struct lfs_config *c,
+                          lfs_block_t block,
+                          lfs_off_t off,
+                          void *buffer,
+                          lfs_size_t size)
+{
+    off_t addr;
+
+    addr = (block * c->block_size) + off;
+
+    return flash_area_read(g_fa, addr, buffer, size);
+}
+
+static int lfs_flash_prog(const struct lfs_config *c,
+                          lfs_block_t block,
+                          lfs_off_t off,
+                          const void *buffer,
+                          lfs_size_t size)
+{
+    off_t addr;
+
+    addr = (block * c->block_size) + off;
+
+    return flash_area_write(g_fa, addr, buffer, size);
+}
+
+static int lfs_flash_erase(const struct lfs_config *c,
+                           lfs_block_t block)
+{
+    off_t addr;
+
+    addr = block * c->block_size;
+
+    return flash_area_erase(g_fa, addr, c->block_size);
+}
+
+static int lfs_flash_sync(const struct lfs_config *c)
+{
+    ARG_UNUSED(c);
+    return 0;
+}
+
+/* =========================================================
+ * Init + Mount
+ * =========================================================
+ */
+
+int mcuboot_lfs_init(void)
+{
+    int rc;
+
+    /*
+     * Open flash partition from DTS:
+     *
+     * partitions {
+     *     littlefs_partition: partition@xxxx {
+     *         label = "littlefs";
+     *     };
+     * };
+     */
+
+    rc = flash_area_open(FIXED_PARTITION_ID(PM_0_LABEL),
+                         &g_fa);
+    if (rc) {
+        BOOT_LOG_ERR("flash_area_open failed %d", rc);
+        return rc;
+    }
+
+    memset(&g_lfs_cfg, 0, sizeof(g_lfs_cfg));
+
+    g_lfs_cfg.read  = lfs_flash_read;
+    g_lfs_cfg.prog  = lfs_flash_prog;
+    g_lfs_cfg.erase = lfs_flash_erase;
+    g_lfs_cfg.sync  = lfs_flash_sync;
+
+    /*
+     * Configure from flash geometry
+     */
+
+    g_lfs_cfg.read_size = 16;
+    g_lfs_cfg.prog_size = 16;
+    g_lfs_cfg.block_size = 4096;
+    g_lfs_cfg.block_count =
+        g_fa->fa_size / g_lfs_cfg.block_size;
+
+    g_lfs_cfg.block_cycles = 500;
+
+    g_lfs_cfg.cache_size = 16;
+    g_lfs_cfg.lookahead_size = sizeof(g_lookahead_buffer);
+
+    g_lfs_cfg.read_buffer = g_read_buffer;
+    g_lfs_cfg.prog_buffer = g_prog_buffer;
+    g_lfs_cfg.lookahead_buffer = g_lookahead_buffer;
+
+    /*
+     * Mount
+     */
+
+    rc = lfs_mount(&g_lfs, &g_lfs_cfg);
+
+    if (rc) {
+#if(defined(CONFIG_FS_LITTLEFS_READONLY) && CONFIG_FS_LITTLEFS_READONLY == 1)
+        return rc;
+#else
+        BOOT_LOG_INF("Formatting LittleFS...");
+
+        rc = lfs_format(&g_lfs, &g_lfs_cfg);
+        if (rc) {
+            BOOT_LOG_ERR("lfs_format failed %d", rc);
+            return rc;
+        }
+
+        rc = lfs_mount(&g_lfs, &g_lfs_cfg);
+        if (rc) {
+            BOOT_LOG_ERR("lfs_mount failed %d", rc);
+            return rc;
+        }
+#endif
+    }
+
+    BOOT_LOG_INF("LittleFS mounted");
+
+    return 0;
+}
+/* =========================================================
+ * List files
+ * =========================================================
+ */
+
+static void mcuboot_lfs_list_files(void)
+{
+    lfs_dir_t dir;
+    struct lfs_info info;
+    int rc;
+
+    rc = lfs_dir_open(&g_lfs, &dir, "/");
+    if (rc < 0) {
+        BOOT_LOG_ERR("lfs_dir_open failed %d", rc);
+        return;
+    }
+
+    BOOT_LOG_INF("LittleFS file list:");
+
+    while (1) {
+
+        rc = lfs_dir_read(&g_lfs, &dir, &info);
+
+        if (rc < 0) {
+            BOOT_LOG_ERR("lfs_dir_read failed %d", rc);
+            break;
+        }
+
+        /* end of directory */
+        if (rc == 0) {
+            break;
+        }
+
+        /*
+         * Skip "." and ".."
+         */
+        if ((strcmp(info.name, ".") == 0) ||
+            (strcmp(info.name, "..") == 0)) {
+            continue;
+        }
+
+        if (info.type == LFS_TYPE_DIR) {
+
+            BOOT_LOG_INF("[DIR ] %s", info.name);
+
+        } else if (info.type == LFS_TYPE_REG) {
+
+            BOOT_LOG_INF("[FILE] %s (%u bytes)",
+                         info.name,
+                         (uint32_t)info.size);
+        }
+    }
+
+    lfs_dir_close(&g_lfs, &dir);
+}
+#endif
+#endif
+static uint8_t rd_buff[128] = {0};
+
 int main(void)
 {
     struct boot_rsp rsp;
     int rc;
     __asm("NOP");
+    
 #if(defined(CONFIG_FILE_SYSTEM_LITTLEFS) && CONFIG_FILE_SYSTEM_LITTLEFS == 1)
+#if(defined(CONFIG_FILE_SYSTEM) && CONFIG_FILE_SYSTEM == 1)
     rc = fs_mount(&lfs_mount_point);
     if (rc < 0) {
         BOOT_LOG_INF("Mount failed %d\n", rc);
@@ -505,8 +722,39 @@ int main(void)
     } else {
         BOOT_LOG_INF("LittleFS mounted\n");
     }
-    __asm("NOP");
+#else
+    /* We access to External Norflash by direct littlefs api because VFS not enabled */
+    if(mcuboot_lfs_init() != 0) {
+        while(1) {
+            __asm("NOP");
+        }
+    } else {
+        mcuboot_lfs_list_files();
+
+        lfs_file_t file;
+        int rc;
+
+        rc = lfs_file_open(&g_lfs,
+                        &file,
+                        "/updater.bin",
+                        LFS_O_RDONLY);
+        if (rc == LFS_ERR_OK) {
+            size_t rd_size = lfs_file_read(&g_lfs, &file, rd_buff, sizeof(rd_buff));
+            if(rd_size != sizeof(rd_buff)) {
+                while(1) {
+                    __asm("NOP");
+                }
+            }
+            lfs_file_close(&g_lfs, &file);
+        } else {
+            while(1) {
+                __asm("NOP");
+            }
+        }
+    }
 #endif
+#endif
+    __asm("NOP");
 
 #if defined(CONFIG_BOOT_USB_DFU_GPIO) || defined(CONFIG_BOOT_USB_DFU_WAIT)
     bool usb_dfu_requested = false;
