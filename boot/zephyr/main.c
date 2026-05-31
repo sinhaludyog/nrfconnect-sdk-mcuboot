@@ -719,12 +719,10 @@ int main(void)
 
     if(reset_reason & RESET_WATCHDOG) {
         /* MCU Reset reason by WDT */
-        boot_record_wdt_event();
-        // while(1) {
-        //     __asm("NOP");
-        // }
+        boot_record_wdt_event(WDT_COUNT_UPDATE);
     } else {
         /* Normal boot found */
+        boot_record_wdt_event(WDT_COUNT_RESET);
     }
     BOOT_LOG_INF("Starting bootloader from %x", reset_reason);
     __asm("NOP");

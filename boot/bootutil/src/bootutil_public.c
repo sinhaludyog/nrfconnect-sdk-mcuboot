@@ -824,10 +824,8 @@ boot_write_image_magic(const struct flash_area *fap)
 
 
 int
-boot_record_wdt_event(void)
+boot_record_wdt_event(uint8_t record_event)
 {
-    #define WDT_MAGIC 0x25031991
-
     struct wdt_event_record {
         uint32_t magic;        /* validity check */
         uint32_t counter;      /* number of WDT resets */
@@ -859,7 +857,13 @@ boot_record_wdt_event(void)
         rec.counter = 0;
     }
 
-    rec.counter++;
+    if(record_event == WDT_COUNT_UPDATE) {
+        rec.counter++;
+    } else if(record_event == WDT_COUNT_RESET) {
+        rec.counter = 0;
+    } else {
+        /* PANIC */
+    }
 
     /* erase + write trailer sector (simplified) */
     ret = flash_area_erase(fa, offset, sizeof(rec));

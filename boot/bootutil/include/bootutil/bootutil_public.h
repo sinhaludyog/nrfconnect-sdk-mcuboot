@@ -390,7 +390,24 @@ int boot_write_image_ok_val(const struct flash_area *fap, uint8_t value);
  */
 int boot_write_image_magic(const struct flash_area *fap);
 
-int boot_record_wdt_event(void);
+#define WDT_COUNT_UPDATE    0U
+#define WDT_COUNT_RESET     1U
+#define WDT_MAGIC           0x25031991
+
+/**
+ * @brief Record watchdog reset event into slot0 trailer.
+ *
+ * This API stores persistent watchdog reset information
+ * inside the slot0 trailer region.
+ *
+ * @param record_event
+ *        WDT_COUNT_UPDATE : increment watchdog reset counter
+ *        WDT_COUNT_RESET  : clear watchdog reset counter
+ *
+ * @return 0 on success
+ * @return negative errno on failure
+ */
+int boot_record_wdt_event(uint8_t record_event);
 
 #ifdef __cplusplus
 }
